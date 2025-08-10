@@ -7,9 +7,17 @@ import cv2
 import numpy as np
 from PyQt5.QtCore import QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QImage, QPixmap
-import jetson.utils
-import jetson.inference
 from config import *
+
+# Optional Jetson imports
+try:
+    import jetson.utils
+    import jetson.inference
+    JETSON_AVAILABLE = True
+except ImportError:
+    print("Warning: Jetson modules not available - using OpenCV fallback")
+    jetson = None
+    JETSON_AVAILABLE = False
 
 class CameraThread(QThread):
     """Thread for handling camera operations"""
@@ -25,9 +33,12 @@ class CameraThread(QThread):
     def initialize_camera(self):
         """Initialize camera with Jetson optimizations"""
         try:
-            # Try to use Jetson camera first (CSI camera)
-            self.camera = jetson.utils.videoSource("csi://0")
-            print("Initialized CSI camera")
+            # Try to use Jetson camera first (CSI camera) if available
+            if JETSON_AVAILABLE:
+                self.camera = jetson.utils.videoSource("csi://0")
+                print("Initialized CSI camera")
+            else:
+                raise ImportError("Jetson not available")
         except:
             try:
                 # Fallback to USB camera
@@ -62,17 +73,18 @@ class CameraThread(QThread):
                             self.capture_next_frame = False
                 else:
                     # Jetson camera
-                    frame = self.camera.Capture()
-                    if frame is not None:
-                        # Convert CUDA to numpy
-                        frame_np = jetson.utils.cudaToNumpy(frame)
-                        frame_rgb = cv2.cvtColor(frame_np, cv2.COLOR_RGBA2RGB)
-                        self.frame_ready.emit(frame_rgb)
-                        
-                        # Capture frame if requested
-                        if self.capture_next_frame:
-                            self.captured_frames.append(frame_rgb.copy())
-                            self.capture_next_frame = False
+                    if JETSON_AVAILABLE:
+                        frame = self.camera.Capture()
+                        if frame is not None:
+                            # Convert CUDA to numpy
+                            frame_np = jetson.utils.cudaToNumpy(frame)
+                            frame_rgb = cv2.cvtColor(frame_np, cv2.COLOR_RGBA2RGB)
+                            self.frame_ready.emit(frame_rgb)
+                            
+                            # Capture frame if requested
+                            if self.capture_next_frame:
+                                self.captured_frames.append(frame_rgb.copy())
+                                self.capture_next_frame = False
                             
                 self.msleep(33)  # ~30 FPS
                 
